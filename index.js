@@ -12,7 +12,7 @@
 // slider handle. Capture One ships this natively; this brings it to Safelight.
 //
 // How it stays honest: each notch just calls the SAME develop-store setParam the
-// built-in sliders call (live preview), then a debounced commitEdit writes the
+// built-in sliders call (live preview), then releasing the key commitEdits the
 // scrub session to history. It never touches the render path, thumbnails or
 // export — it only moves the values you could have moved by hand.
 
@@ -110,9 +110,9 @@ export function activate(api) {
   let activeKey = null;          // most-recently-pressed held key drives the wheel
   let accum = 0;                 // sub-step accumulator (smooth trackpads / fine mode)
   let accumParam = null;
-  let canvasMounted = false;     // is the Develop canvas (and thus the HUD) on screen
+  let hudRoot = null;            // the HUD's element, mounted while the Develop canvas is on screen
   let capturing = false;         // a Preferences key-capture is listening — stand down
-  let commitTimer = null, commitDirty = false, commitLabel = "Speed Edit";
+  let commitDirty = false, commitLabel = "Speed Edit";
   let hideTimer = null;
 
   const hud = makeStore(React, { on: false, label: "", value: "", sub: "" });
@@ -249,18 +249,26 @@ export function activate(api) {
   }
 
   // ── history commit (one undo step per scrub session) ─────────────────────────
+  // A session ends on key release, on a switch to another key, or on window
+  // blur, which stands in for a key-up the window never receives.
   function flushCommit() {
-    if (commitTimer) { clearTimeout(commitTimer); commitTimer = null; }
     if (commitDirty) {
       commitDirty = false;
       try { useDevelopStore.getState().commitEdit(commitLabel); } catch (_) {}
     }
   }
-  function scheduleCommit(label) {
+  function markDirty(label) {
     commitDirty = true;
     commitLabel = label;
-    if (commitTimer) clearTimeout(commitTimer);
-    commitTimer = setTimeout(flushCommit, 650);
+  }
+
+  function canvasMounted() { return hudRoot !== null; }
+  // The overlay layer the HUD mounts in covers the canvas, and its parent holds
+  // the canvas itself, so a wheel whose target sits in there is over the image
+  // (or a core overlay on it), never a side panel or a dialog on top.
+  function overCanvas(target) {
+    const area = hudRoot && hudRoot.parentElement && hudRoot.parentElement.parentElement;
+    return !!area && !!target && area.contains(target);
   }
 
   // ── HUD ──────────────────────────────────────────────────────────────────────
@@ -296,7 +304,7 @@ export function activate(api) {
     }
     activeKey = k;
     const meta = metaFor(b.param);
-    if (canvasMounted && meta) showHud(meta, readVal(b.param, meta), true);
+    if (canvasMounted() && meta) showHud(meta, readVal(b.param, meta), true);
   }
 
   function onKeyUp(e) {
@@ -312,7 +320,7 @@ export function activate(api) {
         accum = 0;
         accumParam = b ? b.param : null;
         const meta = b ? metaFor(b.param) : null;
-        if (meta && canvasMounted) showHud(meta, readVal(b.param, meta), true);
+        if (meta && canvasMounted()) showHud(meta, readVal(b.param, meta), true);
       } else {
         hideHudSoon();
       }
@@ -320,7 +328,7 @@ export function activate(api) {
   }
 
   function onWheel(e) {
-    if (!cfg.enabled || capturing || !canvasMounted || !activeKey) return;
+    if (!cfg.enabled || capturing || !activeKey || !overCanvas(e.target)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave system/zoom gestures alone
     const b = bindings.get(activeKey);
     if (!b) return;
@@ -361,7 +369,7 @@ export function activate(api) {
     next = meta.decimals > 0 ? Math.round(next * scale) / scale : Math.round(next);
     if (next !== cur) {
       writeVal(b.param, next, meta);
-      scheduleCommit(meta.label);
+      markDirty(meta.label);
     }
     showHud(meta, next, false);
   }
@@ -380,6 +388,8 @@ export function activate(api) {
   window.addEventListener("blur", onBlur);
 
   // ── HUD overlay (rendered over the Develop canvas) ────────────────────────────
+  const setHudRoot = (el) => { hudRoot = el; };
+  const hudAnchor = { position: "absolute", inset: 0, pointerEvents: "none" };
   const hudWrap = {
     position: "absolute", top: "12px", left: "50%", transform: "translateX(-50%)",
     display: "flex", flexDirection: "column", alignItems: "center", gap: "2px",
@@ -397,14 +407,16 @@ export function activate(api) {
 
   function Hud() {
     const st = hud.use();
-    React.useEffect(() => { canvasMounted = true; return () => { canvasMounted = false; }; }, []);
-    if (!cfg.showHud || !st.on) return null;
-    return h("div", { style: hudWrap },
-      h("div", { style: hudInner },
-        h("span", { style: hudLabel }, st.label),
-        h("span", { style: hudValue }, st.value),
+    // Always mounted, empty while hidden, so its element marks the canvas area.
+    if (!cfg.showHud || !st.on) return h("div", { ref: setHudRoot, style: hudAnchor });
+    return h("div", { ref: setHudRoot, style: hudAnchor },
+      h("div", { style: hudWrap },
+        h("div", { style: hudInner },
+          h("span", { style: hudLabel }, st.label),
+          h("span", { style: hudValue }, st.value),
+        ),
+        st.sub ? h("div", { style: hudSub }, st.sub) : null,
       ),
-      st.sub ? h("div", { style: hudSub }, st.sub) : null,
     );
   }
   api.registerSlot({ id: SLOT_ID, slot: "develop-canvas-overlay", component: Hud, order: 1000 });
@@ -618,7 +630,7 @@ export function activate(api) {
     order: 50,
     fields: [],
     component: Settings,
-    keywords: ["keyboard", "wheel", "scroll", "shortcut", "scrub", "speed", "exposure", "contrast", "tactile", "capture one"],
+    keywords: ["keyboard", "wheel", "scroll", "shortcut", "scrub", "speed", "exposure", "contrast", "tactile"],
   });
 
   cleanup = () => {

@@ -64,6 +64,6 @@ goes inert and is marked *unavailable* until it returns.
 Safelight with the extension settings + `develop-canvas-overlay` slot APIs
 (`minAppVersion` 2.4.3).
 
-## License
+## Licence
 
 MIT — see [LICENSE](LICENSE).
