@@ -265,7 +265,7 @@ export function activate(api) {
   function canvasMounted() { return hudRoot !== null; }
   // The overlay layer the HUD mounts in covers the canvas, and its parent holds
   // the canvas itself, so a wheel whose target sits in there is over the image
-  // (or a core overlay on it), never a side panel or a dialog on top.
+  // (or a core overlay on it), never a side panel or a dialogue on top.
   function overCanvas(target) {
     const area = hudRoot && hudRoot.parentElement && hudRoot.parentElement.parentElement;
     return !!area && !!target && area.contains(target);

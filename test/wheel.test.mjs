@@ -48,7 +48,7 @@ function setup() {
   });
 
   // The develop canvas area: the overlay layer the HUD mounts in, and the
-  // canvas beside it. A side panel and a dialog live elsewhere in the page.
+  // canvas beside it. A side panel and a dialogue live elsewhere in the page.
   const page = node();
   const area = node(page);
   const layer = node(area);
@@ -70,7 +70,7 @@ function setup() {
   return { state, canvas, sidePanel, dialog, keydown, keyup, wheel };
 }
 
-test("wheel over a side panel or a dialog scrolls it, not the held slider", (t) => {
+test("wheel over a side panel or a dialogue scrolls it, not the held slider", (t) => {
   t.after(deactivate);
   const { state, canvas, sidePanel, dialog, keydown, wheel } = setup();
   keydown("s");

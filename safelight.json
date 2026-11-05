@@ -1,7 +1,7 @@
 {
 	"id": "speed-edit",
 	"name": "Speed Edit",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Adjust Develop sliders with the keyboard and mouse wheel. Hold a key (A = Exposure, Z = Contrast, …) and scroll over the image to move that slider. No clicking, no dragging. Every key, target and step is remappable.",
 	"author": "Anthony Reimche",
 	"main": "index.js",
