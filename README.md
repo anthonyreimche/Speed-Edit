@@ -62,7 +62,7 @@ goes inert and is marked *unavailable* until it returns.
 ## Requirements
 
 Safelight with the extension settings + `develop-canvas-overlay` slot APIs
-(`minAppVersion` 2.4.3).
+(`minAppVersion` 3.2.0).
 
 ## Licence
 

@@ -94,14 +94,13 @@ let cleanup = null;
 export function activate(api) {
   const React = api.react;
   const h = React.createElement;
-  const ui = api.ui || {};
+  const { Button, Select, NumberInput, Toggle, tokens } = api.ui;
   const useDevelopStore = api.stores.useDevelopStore;
 
   // Core's structured "nested" sliders (vignette/grain/…) routed through setParam
   // by the host — they live inside a param object so a plain setParam can't reach
-  // them. Present on new enough hosts; absent → we simply don't offer them.
-  const da = (api.develop && api.develop.adjustments) || null;
-  const hasAdj = !!(da && typeof da.list === "function" && typeof da.get === "function" && typeof da.set === "function");
+  // them.
+  const da = api.develop.adjustments;
 
   // ── runtime state ───────────────────────────────────────────────────────────
   let cfg = { ...CFG_DEFAULTS };
@@ -140,10 +139,8 @@ export function activate(api) {
   // ── target resolution (built-in params + other extensions' sliders) ───────────
   // Built-in scalars live on the develop store's `params`; extension sliders are
   // uniforms in `paramBag`, keyed "<stageId>.<uniform>". When the host exposes
-  // api.params (read-only stage-uniform descriptors) we can target those too;
-  // without it we transparently fall back to the built-ins only.
+  // api.params (read-only stage-uniform descriptors) we can target those too.
   function descriptorFor(param) {
-    if (!api.params || typeof api.params.get !== "function") return null;
     try { return api.params.get(param) || null; } catch (_) { return null; }
   }
   function decimalsForStep(step) {
@@ -156,20 +153,18 @@ export function activate(api) {
   function adjMap() {
     if (_adjMap) return _adjMap;
     _adjMap = new Map();
-    if (hasAdj) {
-      try {
-        for (const a of da.list() || []) {
-          _adjMap.set(a.key, {
-            // HUD label is qualified ("Vignette · Amount"); the dropdown item
-            // stays short ("Amount") under its group heading.
-            label: a.group ? a.group + " · " + a.label : a.label,
-            group: a.group, min: a.min, max: a.max, step: a.step,
-            decimals: a.step < 1 ? decimalsForStep(a.step) : 0,
-            signed: a.min < 0, unit: "", adj: true, def: a.default,
-          });
-        }
-      } catch (_) {}
-    }
+    try {
+      for (const a of da.list() || []) {
+        _adjMap.set(a.key, {
+          // HUD label is qualified ("Vignette · Amount"); the dropdown item
+          // stays short ("Amount") under its group heading.
+          label: a.group ? a.group + " · " + a.label : a.label,
+          group: a.group, min: a.min, max: a.max, step: a.step,
+          decimals: a.step < 1 ? decimalsForStep(a.step) : 0,
+          signed: a.min < 0, unit: "", adj: true, def: a.default,
+        });
+      }
+    } catch (_) {}
     return _adjMap;
   }
   function metaFor(param) {
@@ -203,14 +198,14 @@ export function activate(api) {
     };
   }
   function readVal(param, meta) {
-    if (meta.adj) return hasAdj ? da.get(param) : 0;
+    if (meta.adj) return da.get(param);
     const ds = useDevelopStore.getState();
     if (!meta.dynamic) return Number(ds.params[param]) || 0;
     const v = (ds.paramBag || {})[param];
     return typeof v === "number" ? v : meta.def || 0;
   }
   function writeVal(param, value, meta) {
-    if (meta.adj) { if (hasAdj) da.set(param, value); return; }
+    if (meta.adj) { da.set(param, value); return; }
     const ds = useDevelopStore.getState();
     if (meta.dynamic) ds.setDynParam(param, value);
     else ds.setParam(param, value);
@@ -237,7 +232,6 @@ export function activate(api) {
   // stale when bindings change or the user remaps. KEY -> action label.
   function reservedKeyMap() {
     const out = new Map();
-    if (!api.keybindings || typeof api.keybindings.list !== "function") return out;
     try {
       for (const b of api.keybindings.list() || []) {
         if (b.category !== "General" && b.category !== "Develop") continue;
@@ -397,13 +391,13 @@ export function activate(api) {
   };
   const hudInner = {
     display: "flex", alignItems: "baseline", gap: "7px", padding: "4px 9px",
-    borderRadius: "7px", border: "1px solid var(--color-border)",
-    background: "color-mix(in srgb, var(--color-surface-2) 88%, transparent)",
+    borderRadius: "7px", border: `1px solid ${tokens.border}`,
+    background: `color-mix(in srgb, ${tokens.surface2} 88%, transparent)`,
     boxShadow: "0 3px 12px rgba(0,0,0,0.3)", backdropFilter: "blur(6px)",
   };
-  const hudLabel = { fontSize: "9px", letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--color-text-secondary)" };
-  const hudValue = { fontSize: "13px", fontWeight: 600, fontVariantNumeric: "tabular-nums", color: "var(--color-text-primary)" };
-  const hudSub = { fontSize: "9px", color: "var(--color-text-muted)" };
+  const hudLabel = { fontSize: "9px", letterSpacing: "0.05em", textTransform: "uppercase", color: tokens.textSecondary };
+  const hudValue = { fontSize: "13px", fontWeight: 600, fontVariantNumeric: "tabular-nums", color: tokens.textPrimary };
+  const hudSub = { fontSize: "9px", color: tokens.textMuted };
 
   function Hud() {
     const st = hud.use();
@@ -422,60 +416,6 @@ export function activate(api) {
   api.registerSlot({ id: SLOT_ID, slot: "develop-canvas-overlay", component: Hud, order: 1000 });
 
   // ── Preferences ▸ Speed Edit ──────────────────────────────────────────────────
-  // Small UI shims so the panel renders whether or not the host exposes api.ui.
-  function Button(props, label) {
-    if (ui.Button) return h(ui.Button, props, label);
-    const { variant, size, active, full, style, ...rest } = props;
-    return h("button", {
-      type: "button", ...rest,
-      style: {
-        font: "inherit", fontSize: "11px", padding: "5px 10px", borderRadius: "4px",
-        cursor: "pointer", border: "1px solid var(--color-border)",
-        background: active || variant === "primary" ? "var(--color-slider-fill)" : "var(--color-surface-2)",
-        color: active || variant === "primary" ? "#fff" : "var(--color-text-primary)",
-        width: full ? "100%" : undefined, ...style,
-      },
-    }, label);
-  }
-  // Grouped dropdown. Uses the app's own themed dropdown (api.ui.Select, which
-  // takes `groups` for headed sections); falls back to a native <select> only on
-  // hosts too old to provide it. We deliberately don't ship our own popup — the
-  // styled dropdown is core's job, so every dropdown stays consistent.
-  function SelectCtl({ value, groups, onChange }) {
-    if (ui.Select) {
-      return h(ui.Select, { value, groups, onChange, style: { flex: "1 1 auto", minWidth: 0 } });
-    }
-    const opts = [];
-    for (const g of groups) for (const it of g.items) opts.push(it);
-    return h("select", {
-      value, onChange: (e) => onChange(e.target.value),
-      style: {
-        flex: "1 1 auto", minWidth: 0, font: "inherit", fontSize: "11px", padding: "4px 6px",
-        borderRadius: "4px", background: "var(--color-surface-2)", color: "var(--color-text-primary)",
-        border: "1px solid var(--color-border)",
-      },
-    }, opts.map((o) => h("option", { key: o.value, value: o.value }, o.label)));
-  }
-  function NumberInput(props) {
-    if (ui.NumberInput) return h(ui.NumberInput, props);
-    return h("input", {
-      type: "number", value: props.value, step: props.step,
-      onChange: (e) => { const n = Number(e.target.value); if (Number.isFinite(n)) props.onChange(n); },
-      style: {
-        font: "inherit", fontSize: "11px", padding: "4px 6px", borderRadius: "4px", width: props.width || "64px",
-        background: "var(--color-surface-2)", color: "var(--color-text-primary)",
-        border: "1px solid var(--color-border)",
-      },
-    });
-  }
-  function Toggle(props) {
-    if (ui.Toggle) return h(ui.Toggle, props);
-    return h("label", { style: { display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--color-text-primary)", cursor: "pointer" } },
-      h("input", { type: "checkbox", checked: props.checked, onChange: (e) => props.onChange(e.target.checked) }),
-      props.label != null ? h("span", null, props.label) : null,
-    );
-  }
-
   function KeyCapture({ value, onCapture }) {
     const [armed, setArmed] = React.useState(false);
     React.useEffect(() => {
@@ -492,8 +432,9 @@ export function activate(api) {
       window.addEventListener("keydown", handler, true);
       return () => { window.removeEventListener("keydown", handler, true); capturing = false; };
     }, [armed]);
-    return Button(
-      { variant: armed ? "primary" : "secondary", size: "sm", active: armed, onClick: () => setArmed((a) => !a), style: { minWidth: "62px", flex: "0 0 auto", fontFamily: "var(--font-mono)" } },
+    return h(
+      Button,
+      { variant: armed ? "primary" : "secondary", size: "sm", active: armed, onClick: () => setArmed((a) => !a), style: { minWidth: "62px", flex: "0 0 auto", fontFamily: tokens.fontMono } },
       armed ? "press…" : (value || "—"),
     );
   }
@@ -519,45 +460,41 @@ export function activate(api) {
     for (const b of list) if (b.key) counts[normKey(b.key)] = (counts[normKey(b.key)] || 0) + 1;
 
     // Target list: built-in sliders, then one group per extension stage exposing
-    // scrubbable float/int sliders (only when the host supports api.params).
+    // scrubbable float/int sliders.
     // First (untitled) group = the built-in sliders; no heading so the dropdown
     // trigger shows them plainly ("Exposure"), while extension groups keep a
     // heading so a selection reads "Spektrafilm · Halation · Amount".
     const groups = [{ items: Object.keys(PARAMS).map((k) => ({ value: k, label: PARAMS[k].label })) }];
     const allValues = new Set(groups[0].items.map((o) => o.value));
     // Core nested sliders (Vignette, Grain, …) — one titled group each.
-    if (hasAdj) {
-      try {
-        const byGroup = new Map();
-        for (const a of da.list() || []) {
-          let g = byGroup.get(a.group);
-          if (!g) { g = { title: a.group, items: [] }; byGroup.set(a.group, g); }
-          g.items.push({ value: a.key, label: a.label });
-          allValues.add(a.key);
-        }
-        for (const g of byGroup.values()) groups.push(g);
-      } catch (_) {}
-    }
-    if (api.params && typeof api.params.list === "function") {
-      try {
-        const byStage = new Map();
-        for (const d of api.params.list() || []) {
-          if (!d || (d.glslType !== "float" && d.glslType !== "int") || !d.range) continue;
-          // Skip core's own stages — structured-param driven, not paramBag (see metaFor).
-          if (isBuiltinExt(d.extensionId)) continue;
-          let g = byStage.get(d.stageId);
-          if (!g) { g = { title: groupTitle(d), items: [] }; byStage.set(d.stageId, g); }
-          g.items.push({ value: d.qualifiedKey, label: d.label || d.localKey || d.qualifiedKey });
-          allValues.add(d.qualifiedKey);
-        }
-        const extGroups = [...byStage.values()].filter((g) => g.items.length);
-        extGroups.sort((a, b) => a.title.localeCompare(b.title));
-        for (const g of extGroups) { g.items.sort((a, b) => a.label.localeCompare(b.label)); groups.push(g); }
-      } catch (_) {}
-    }
+    try {
+      const byGroup = new Map();
+      for (const a of da.list() || []) {
+        let g = byGroup.get(a.group);
+        if (!g) { g = { title: a.group, items: [] }; byGroup.set(a.group, g); }
+        g.items.push({ value: a.key, label: a.label });
+        allValues.add(a.key);
+      }
+      for (const g of byGroup.values()) groups.push(g);
+    } catch (_) {}
+    try {
+      const byStage = new Map();
+      for (const d of api.params.list() || []) {
+        if (!d || (d.glslType !== "float" && d.glslType !== "int") || !d.range) continue;
+        // Skip core's own stages — structured-param driven, not paramBag (see metaFor).
+        if (isBuiltinExt(d.extensionId)) continue;
+        let g = byStage.get(d.stageId);
+        if (!g) { g = { title: groupTitle(d), items: [] }; byStage.set(d.stageId, g); }
+        g.items.push({ value: d.qualifiedKey, label: d.label || d.localKey || d.qualifiedKey });
+        allValues.add(d.qualifiedKey);
+      }
+      const extGroups = [...byStage.values()].filter((g) => g.items.length);
+      extGroups.sort((a, b) => a.title.localeCompare(b.title));
+      for (const g of extGroups) { g.items.sort((a, b) => a.label.localeCompare(b.label)); groups.push(g); }
+    } catch (_) {}
 
-    const labelCss = { fontSize: "11px", color: "var(--color-text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" };
-    const noteCss = { fontSize: "10px", color: "var(--color-text-muted)", lineHeight: 1.5 };
+    const labelCss = { fontSize: "11px", color: tokens.textSecondary, textTransform: "uppercase", letterSpacing: "0.04em" };
+    const noteCss = { fontSize: "10px", color: tokens.textMuted, lineHeight: 1.5 };
 
     // Live set of bare keys core already uses while editing (never hard-coded).
     const reservedKeys = reservedKeyMap();
@@ -575,21 +512,20 @@ export function activate(api) {
       const tickTop = { flex: "0 0 auto" };
       return h("div", { key: i, style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap" } },
         h(KeyCapture, { value: key, onCapture: (k) => setRow(i, { key: k }) }),
-        h("span", { style: { color: "var(--color-text-muted)", fontSize: "11px", ...tickTop } }, "→"),
-        h(SelectCtl, {
-          value: b.param, groups: rowGroups,
-          onChange: (v) => setRow(i, { param: v }),
-        }),
+        h("span", { style: { color: tokens.textMuted, fontSize: "11px", ...tickTop } }, "→"),
+        h("div", { style: { flex: "1 1 auto", minWidth: 0 } },
+          h(Select, { value: b.param, groups: rowGroups, onChange: (v) => setRow(i, { param: v }) }),
+        ),
         warn
-          ? h("span", { style: { fontSize: "10px", color: "var(--color-label-red, #e35)", whiteSpace: "nowrap", ...tickTop } }, warn)
+          ? h("span", { style: { fontSize: "10px", color: tokens.labelRed, whiteSpace: "nowrap", ...tickTop } }, warn)
           : null,
-        h("span", { style: { color: "var(--color-text-muted)", fontSize: "10px", ...tickTop } }, "step"),
+        h("span", { style: { color: tokens.textMuted, fontSize: "10px", ...tickTop } }, "step"),
         h(NumberInput, {
           value: b.step != null ? b.step : meta.step, width: "60px",
           step: meta.decimals > 0 ? 0.01 : 1,
           onChange: (v) => setRow(i, { step: v }),
         }),
-        Button({ variant: "ghost", size: "sm", onClick: () => removeRow(i), title: "Remove binding", style: { color: "var(--color-text-muted)", flex: "0 0 auto" } }, "✕"),
+        h(Button, { variant: "ghost", size: "sm", onClick: () => removeRow(i), title: "Remove binding", style: { color: tokens.textMuted, flex: "0 0 auto" } }, "✕"),
       );
     });
 
@@ -604,7 +540,7 @@ export function activate(api) {
         h(Toggle, { checked: showHud, label: "Show value readout on the image", onChange: (v) => api.settings.set("showHud", v) }),
         h(Toggle, { checked: invert, label: "Invert wheel direction", onChange: (v) => api.settings.set("invert", v) }),
         h("div", { style: { display: "flex", alignItems: "center", gap: "8px" } },
-          h("span", { style: { fontSize: "11px", color: "var(--color-text-primary)" } }, "Fine-step multiplier (Shift)"),
+          h("span", { style: { fontSize: "11px", color: tokens.textPrimary } }, "Fine-step multiplier (Shift)"),
           h(NumberInput, { value: fineFactor, width: "62px", step: 0.05, onChange: (v) => api.settings.set("fineFactor", clamp(v, 0.02, 1)) }),
         ),
       ),
@@ -613,8 +549,8 @@ export function activate(api) {
         h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
           h("span", { style: labelCss }, "Key bindings"),
           h("div", { style: { display: "flex", gap: "6px" } },
-            Button({ variant: "secondary", size: "sm", onClick: addRow }, "+ Add"),
-            Button({ variant: "ghost", size: "sm", onClick: () => saveList(DEFAULT_BINDINGS.map((b) => ({ ...b }))) }, "Reset defaults"),
+            h(Button, { variant: "secondary", size: "sm", onClick: addRow }, "+ Add"),
+            h(Button, { variant: "ghost", size: "sm", onClick: () => saveList(DEFAULT_BINDINGS.map((b) => ({ ...b }))) }, "Reset defaults"),
           ),
         ),
         ...rows,
@@ -640,7 +576,7 @@ export function activate(api) {
     window.removeEventListener("blur", onBlur);
     offSettings();
     flushCommit();
-    if (api.unregisterSlot) api.unregisterSlot(SLOT_ID);
+    api.unregisterSlot(SLOT_ID);
   };
 }
 

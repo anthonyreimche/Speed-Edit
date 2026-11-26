@@ -41,6 +41,10 @@ function setup() {
   activate({
     react,
     stores: { useDevelopStore },
+    ui: { Button() {}, Select() {}, NumberInput() {}, Toggle() {}, tokens: {} },
+    params: { list: () => [], get: () => undefined },
+    keybindings: { list: () => [] },
+    develop: { adjustments: { list: () => [], get: () => 0, set() {} } },
     settings: { get: (_k, d) => d, set() {}, onChange: () => () => {} },
     registerSlot: (c) => { Hud = c.component; },
     unregisterSlot() {},
